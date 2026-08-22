@@ -76,7 +76,15 @@ class VoiceJoinerBot(commands.Bot):
         if not self.user or member.id != self.user.id:
             return
 
-        expected = await self.get_target_channel()
+        try:
+            expected = await self.get_target_channel()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Could not inspect the target channel after a voice-state change")
+            asyncio.create_task(self.ensure_voice_connection())
+            return
+
         if after.channel is None or after.channel.id != expected.id:
             logger.warning(
                 "Voice state changed unexpectedly (before=%s, after=%s); rejoining",
