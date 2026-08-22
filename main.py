@@ -23,7 +23,6 @@ logger = logging.getLogger("voice-joiner")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 VOICE_CHANNEL_ID_RAW = os.getenv("VOICE_CHANNEL_ID")
-PORT = int(os.getenv("PORT", "10000"))
 RECONNECT_SECONDS = max(10, int(os.getenv("RECONNECT_SECONDS", "30")))
 
 if not TOKEN:
@@ -53,7 +52,20 @@ def health() -> tuple:
 
 
 def run_health_server() -> None:
-    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+    """Serve Render's health checks independently of discord.py's event loop."""
+    port = int(os.getenv("PORT", 10000))
+    logger.info("Starting health server on 0.0.0.0:%s", port)
+    try:
+        app.run(
+            host="0.0.0.0",
+            port=port,
+            debug=False,
+            use_reloader=False,
+            threaded=True,
+        )
+    except Exception:
+        logger.exception("Health server stopped unexpectedly")
+        raise
 
 
 class VoiceJoinerBot(commands.Bot):
@@ -137,13 +149,13 @@ class VoiceJoinerBot(commands.Bot):
 def main() -> None:
     global bot
     bot = VoiceJoinerBot()
-    health_thread = threading.Thread(target=run_health_server, name="health-server", daemon=True)
+    health_thread = threading.Thread(
+        target=run_health_server,
+        name="health-server",
+        daemon=True,
+    )
     health_thread.start()
-    try:
-        bot.run(TOKEN, reconnect=True)
-    finally:
-        if not bot.is_closed():
-            asyncio.run(bot.close())
+    bot.run(TOKEN, reconnect=True)
 
 
 if __name__ == "__main__":
