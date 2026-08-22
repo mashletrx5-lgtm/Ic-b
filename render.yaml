@@ -4,6 +4,7 @@ services:
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
+    healthCheckPath: /healthz
     envVars:
       - key: DISCORD_TOKEN
         sync: false
