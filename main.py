@@ -21,34 +21,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("voice-joiner")
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-VOICE_CHANNEL_ID_RAW = os.getenv("VOICE_CHANNEL_ID")
-RECONNECT_SECONDS = max(10, int(os.getenv("RECONNECT_SECONDS", "30")))
-
-if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN is required")
-if not VOICE_CHANNEL_ID_RAW:
-    raise RuntimeError("VOICE_CHANNEL_ID is required")
-try:
-    VOICE_CHANNEL_ID = int(VOICE_CHANNEL_ID_RAW)
-except ValueError as exc:
-    raise RuntimeError("VOICE_CHANNEL_ID must be a numeric Discord channel ID") from exc
-
 app = Flask(__name__)
 bot: Optional["VoiceJoinerBot"] = None
 
 
-@app.get("/")
-@app.get("/healthz")
-def health() -> tuple:
-    connected = bool(bot and bot.voice_client and bot.voice_client.is_connected())
-    return jsonify(
-        {
-            "status": "ok",
-            "service": "discord-voice-joiner",
-            "voice_connected": connected,
-        }
-    ), 200
+@app.route("/", methods=["GET"])
+@app.route("/healthz", methods=["GET"])
+def health() -> tuple[dict[str, str], int]:
+    """Return immediately; health checks must not depend on Discord."""
+    return jsonify({"status": "ok"}), 200
 
 
 def run_health_server() -> None:
@@ -69,9 +50,11 @@ def run_health_server() -> None:
 
 
 class VoiceJoinerBot(commands.Bot):
-    def __init__(self) -> None:
+    def __init__(self, voice_channel_id: int, reconnect_seconds: int) -> None:
         intents = discord.Intents.default()
         super().__init__(command_prefix="!", intents=intents)
+        self.voice_channel_id = voice_channel_id
+        self.reconnect_seconds = reconnect_seconds
         self.voice_client: Optional[discord.VoiceClient] = None
         self._connection_lock = asyncio.Lock()
 
@@ -105,7 +88,7 @@ class VoiceJoinerBot(commands.Bot):
             )
             asyncio.create_task(self.ensure_voice_connection())
 
-    @tasks.loop(seconds=RECONNECT_SECONDS)
+    @tasks.loop(seconds=30)
     async def maintain_voice(self) -> None:
         await self.ensure_voice_connection()
 
@@ -114,11 +97,11 @@ class VoiceJoinerBot(commands.Bot):
         await self.wait_until_ready()
 
     async def get_target_channel(self) -> discord.VoiceChannel:
-        channel = self.get_channel(VOICE_CHANNEL_ID)
+        channel = self.get_channel(self.voice_channel_id)
         if channel is None:
-            channel = await self.fetch_channel(VOICE_CHANNEL_ID)
+            channel = await self.fetch_channel(self.voice_channel_id)
         if not isinstance(channel, discord.VoiceChannel):
-            raise TypeError(f"Channel {VOICE_CHANNEL_ID} is not a voice channel")
+            raise TypeError(f"Channel {self.voice_channel_id} is not a voice channel")
         return channel
 
     async def ensure_voice_connection(self) -> None:
@@ -148,14 +131,30 @@ class VoiceJoinerBot(commands.Bot):
 
 def main() -> None:
     global bot
-    bot = VoiceJoinerBot()
     health_thread = threading.Thread(
         target=run_health_server,
         name="health-server",
         daemon=True,
     )
     health_thread.start()
-    bot.run(TOKEN, reconnect=True)
+
+    try:
+        token = os.getenv("DISCORD_TOKEN")
+        channel_id_raw = os.getenv("VOICE_CHANNEL_ID")
+        if not token:
+            raise RuntimeError("DISCORD_TOKEN is required")
+        if not channel_id_raw:
+            raise RuntimeError("VOICE_CHANNEL_ID is required")
+        channel_id = int(channel_id_raw)
+        reconnect_seconds = max(10, int(os.getenv("RECONNECT_SECONDS", "30")))
+        bot = VoiceJoinerBot(channel_id, reconnect_seconds)
+        bot.maintain_voice.change_interval(seconds=reconnect_seconds)
+        bot.run(token, reconnect=True)
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested")
+    except Exception:
+        logger.exception("Discord bot stopped; keeping the health server available")
+        health_thread.join()
 
 
 if __name__ == "__main__":
