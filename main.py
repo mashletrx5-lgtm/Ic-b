@@ -34,8 +34,10 @@ def health() -> tuple[dict[str, str], int]:
 
 def run_health_server() -> None:
     """Serve Render's health checks independently of discord.py's event loop."""
-    port = int(os.getenv("PORT", 10000))
-    logger.info("Starting health server on 0.0.0.0:%s", port)
+    port = int(os.environ.get("PORT", 10000))
+    startup_message = f"Flask server started on port {port}"
+    print(startup_message, flush=True)
+    logger.info("%s (host 0.0.0.0, threaded=True)", startup_message)
     try:
         app.run(
             host="0.0.0.0",
@@ -131,6 +133,7 @@ class VoiceJoinerBot(commands.Bot):
 
 def main() -> None:
     global bot
+    # Start the HTTP listener before any Discord configuration or login work.
     health_thread = threading.Thread(
         target=run_health_server,
         name="health-server",
