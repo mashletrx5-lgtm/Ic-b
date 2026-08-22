@@ -12,6 +12,7 @@ import discord
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from flask import Flask, jsonify
+from waitress import serve
 
 load_dotenv()
 
@@ -37,15 +38,9 @@ def run_health_server() -> None:
     port = int(os.environ.get("PORT", 10000))
     startup_message = f"Flask server started on port {port}"
     print(startup_message, flush=True)
-    logger.info("%s (host 0.0.0.0, threaded=True)", startup_message)
+    logger.info("%s (host 0.0.0.0, waitress threads=8)", startup_message)
     try:
-        app.run(
-            host="0.0.0.0",
-            port=port,
-            debug=False,
-            use_reloader=False,
-            threaded=True,
-        )
+        serve(app, host="0.0.0.0", port=port, threads=8)
     except Exception:
         logger.exception("Health server stopped unexpectedly")
         raise
