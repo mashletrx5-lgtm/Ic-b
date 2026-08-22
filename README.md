@@ -38,4 +38,4 @@ Add these environment variables in Render:
 
 Render supplies `PORT` automatically; the service defaults to `10000` when run elsewhere. Use `/healthz` as the health-check path if configuring one manually.
 
-The bot joins on startup, rejoins after a disconnect or kick, moves back if it is moved to another voice channel, and retries failed connection attempts every 30 seconds.
+The bot joins on startup, rejoins after a disconnect or kick, moves back if it is moved to another voice channel, and retries failed connection attempts every 30 seconds. The Flask health app is served by multi-threaded Waitress for stable Render hosting.
